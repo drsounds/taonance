@@ -34,6 +34,7 @@ App::uses('WebzashAppModel', 'Webzash.Model');
  * @subpackage Webzash.Model
  */
 class Entryitem extends WebzashAppModel {
+	public $belongsTo = array('Webzash.Entry', 'Webzash.Ledger');
 
 	/* Validation rules for the Entryitem table */
 	public $validate = array(

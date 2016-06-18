@@ -24,7 +24,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-
+Router::connect('/api/:controller/*', array('plugin' => 'webzash', 'prefix' => 'api', 'action' => 'view', 'api' => true ));
+Router::connect('/api/:controller', array('plugin' => 'webzash', 'prefix' => 'api', 'action' => 'index',  'api' => true));
 Router::connect('/:controller/:action/*', array('plugin' => 'webzash'));
 Router::connect('/:controller/*', array('plugin' => 'webzash', 'action' => 'index'));
+Router::parseExtensions('json');
 Router::connect('/*', array('plugin' => 'webzash', 'controller' => 'dashboard', 'action' => 'index'));

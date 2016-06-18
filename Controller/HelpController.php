@@ -42,6 +42,9 @@ class HelpController extends WebzashAppController {
  */
 	public $uses = array();
 
+	
+	
+
 /**
  * index method
  *

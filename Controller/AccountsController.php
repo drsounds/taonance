@@ -37,7 +37,7 @@ App::uses('AccountList', 'Webzash.Lib');
 class AccountsController extends WebzashAppController {
 
 	public $uses = array('Webzash.Group', 'Webzash.Ledger');
-
+	public $components = array('RequestHandler');
 /**
  * index method
  *
@@ -46,6 +46,22 @@ class AccountsController extends WebzashAppController {
 	public function index() {
 		return $this->redirect(array('plugin' => 'webzash', 'controller' => 'accounts', 'action' => 'show'));
 	}
+
+	public function api_index() {
+		$accountlist = new AccountList();
+		$accountlist->Group = &$this->Group;
+		$accountlist->Ledger = &$this->Ledger;
+		$accountlist->only_opening = false;
+		$accountlist->start_date = null;
+		$accountlist->end_date = null;
+		$accountlist->affects_gross = -1;
+		$accountlist->start(0);
+
+		$this->set('accountlist', $accountlist);
+
+		$this->set('_serialize', array('accountlist'));
+	}
+	
 
 /**
  * show method

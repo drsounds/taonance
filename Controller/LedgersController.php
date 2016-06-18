@@ -39,6 +39,48 @@ class LedgersController extends WebzashAppController {
 	public $uses = array('Webzash.Ledger', 'Webzash.Group', 'Webzash.Entryitem',
 		'Webzash.Log');
 
+	public $components = array('RequestHandler');
+  
+	public function api_index() {
+		$ledgers = $this->Ledger->find('all');
+
+		$objects = array();
+		foreach($ledgers as $ledger) {
+			$objects[] = $ledger['Ledger'];
+		}
+
+		$this->set('objects', $objects);
+
+		$this->set('_serialize', array('objects'));
+	}
+
+	public function api_view($id) {
+		$ledger = $this->Ledger->findById($id);
+		$ledger['Ledger']['group'] = $ledger['Group'];
+		$ledger = $ledger['Ledger'];
+		
+			$ledger['description'] = $ledger ['notes'];
+
+
+
+		$items = $this->Entryitem->find('all', array('conditions' => array('Entryitem.ledger_id' => $ledger['id']), 'order_by' => array('Entryitem.time' => 'DESC')));
+
+		$entryitems = array();
+		foreach($items as $item) {
+			$entry = $item['Entryitem'];
+			$entry['ledger'] = $item['Ledger'];
+			$entry['entry'] = $item['Entry'];
+			if ($ledger['op_balance_dc'] != $entry['ledger']['op_balance_dc']) {
+				$entry['amount'] = -$entry['amount'];
+			}
+			$entryitems[] = $entry;
+		}
+		$ledger['transactions'] = $entryitems;
+		$this->set('ledger', $ledger);
+		$this->set('_serialize', 'ledger');
+
+	}
+
 /**
  * index method
  *

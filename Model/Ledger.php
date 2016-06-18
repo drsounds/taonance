@@ -37,7 +37,7 @@ App::uses('Entryitem', 'Webzash.Model');
 * @subpackage Webzash.model
 */
 class Ledger extends WebzashAppModel {
-
+	public $belongsTo = array('Webzash.Group');
 	/* Validation rules for the Ledger table */
 	public $validate = array(
 
