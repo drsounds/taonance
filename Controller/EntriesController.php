@@ -38,7 +38,218 @@ class EntriesController extends WebzashAppController {
 
 	public $uses = array('Webzash.Entry', 'Webzash.Group', 'Webzash.Ledger',
 		'Webzash.Entrytype', 'Webzash.Entryitem', 'Webzash.Tag', 'Webzash.Log');
+	public $components = array('RequestHandler');
 
+	public function api_index() {
+		if ($this->request->is('post')) {
+			// Handle transaction
+			$data = json_decode(file_get_contents('php://input'), TRUE);
+			$entrydata = array('Entry' => array());
+
+			/* Entry id */
+			unset($data['id']);
+
+			/***** Check and update entry number ******/
+			if ($entrytype['Entrytype']['numbering'] == 1) {
+				/* Auto */
+				if (empty($data['number'])) {
+					$entrydata['Entry']['number'] = $this->Entry->nextNumber($entrytype['Entrytype']['id']);
+				} else {
+					$entrydata['Entry']['number'] = $data[['number'];
+				}
+			} else if ($entrytype['Entrytype']['numbering'] == 2) {
+				/* Manual + Required */
+				if (empty($data['number'])) {
+					$this->Session->setFlash(__d('webzash', 'Entry number cannot be empty.'), 'danger');
+					return;
+				} else {
+					$entrydata['Entry']['number'] = $data['number'];
+				}
+			} else {
+				/* Manual + Optional */
+				$entrydata['Entry']['number'] = $data['number'];
+			}
+
+			/****** Check entry type *****/
+			$entrydata['Entry']['entrytype_id'] = $entrytype['Entrytype']['id'];
+
+			/****** Check tag ******/
+			if (empty($data['tag_id'])) {
+				$entrydata['Entry']['tag_id'] = null;
+			} else {
+				$entrydata['Entry']['tag_id'] = $data['tag_id'];
+			}
+
+			/***** Narration *****/
+			$entrydata['Entry']['narration'] = $data['narration'];
+
+			/***** Date *****/
+			$entrydata['Entry']['date'] = dateToSql($data['date']);
+
+			/***************************************************************************/
+			/***************************** ENTRY ITEMS *********************************/
+			/***************************************************************************/
+
+			/* Check ledger restriction */
+			$dc_valid = false;
+			foreach ($data['items'] as $row => $entryitem) {
+				if ($entryitem['ledger_id'] <= 0) {
+					continue;
+				}
+				$ledger = $this->Ledger->findById($entryitem['ledger_id']);
+				if (!$ledger) {
+					$this->Session->setFlash(__d('webzash', 'Invalid ledger selected.'), 'danger');
+					return;
+				}
+
+				if ($entrytype['Entrytype']['restriction_bankcash'] == 4) {
+					if ($ledger['Ledger']['type'] != 1) {
+						$this->Session->setFlash(__d('webzash', 'Only bank or cash ledgers are allowed for this entry type.'), 'danger');
+						return;
+					}
+				}
+				if ($entrytype['Entrytype']['restriction_bankcash'] == 5) {
+					if ($ledger['Ledger']['type'] == 1) {
+						$this->Session->setFlash(__d('webzash', 'Bank or cash ledgers are not allowed for this entry type.'), 'danger');
+						return;
+					}
+				}
+
+				if ($entryitem['dc'] == 'D') {
+					if ($entrytype['Entrytype']['restriction_bankcash'] == 2) {
+						if ($ledger['Ledger']['type'] == 1) {
+							$dc_valid = true;
+						}
+					}
+				} else if ($entryitem['dc'] == 'C') {
+					if ($entrytype['Entrytype']['restriction_bankcash'] == 3) {
+						if ($ledger['Ledger']['type'] == 1) {
+							$dc_valid = true;
+						}
+					}
+				}
+			}
+			if ($entrytype['Entrytype']['restriction_bankcash'] == 2) {
+				if (!$dc_valid) {
+					$this->Session->setFlash(__d('webzash', 'Atleast one bank or cash ledger has to be on debit side for this entry type.'), 'danger');
+					return;
+				}
+			}
+			if ($entrytype['Entrytype']['restriction_bankcash'] == 3) {
+				if (!$dc_valid) {
+					$this->Session->setFlash(__d('webzash', 'Atleast one bank or cash ledger has to be on credit side for this entry type.'), 'danger');
+					return;
+				}
+			}
+
+			$dr_total = 0;
+			$cr_total = 0;
+
+			/* Check equality of debit and credit total */
+			foreach ($data['items'] as $row => $entryitem) {
+				if ($entryitem['ledger_id'] <= 0) {
+					continue;
+				}
+
+				if ($entryitem['dc'] == 'D') {
+					if ($entryitem['dr_amount'] <= 0) {
+						$this->Session->setFlash(__d('webzash', 'Invalid amount specified. Amount cannot be negative or zero.'), 'danger');
+						return;
+					}
+					if (countDecimal($entryitem['dr_amount']) > Configure::read('Account.decimal_places')) {
+						$this->Session->setFlash(__d('webzash', 'Invalid amount specified. Maximum %s decimal places allowed.', Configure::read('Account.decimal_places')), 'danger');
+						return;
+					}
+					$dr_total = calculate($dr_total, $entryitem['dr_amount'], '+');
+				} else if ($entryitem['dc'] == 'C') {
+					if ($entryitem['cr_amount'] <= 0) {
+						$this->Session->setFlash(__d('webzash', 'Invalid amount specified. Amount cannot be negative or zero.'), 'danger');
+						return;
+					}
+					if (countDecimal($entryitem['cr_amount']) > Configure::read('Account.decimal_places')) {
+						$this->Session->setFlash(__d('webzash', 'Invalid amount specified. Maximum %s decimal places allowed.', Configure::read('Account.decimal_places')), 'danger');
+						return;
+					}
+					$cr_total = calculate($cr_total, $entryitem['cr_amount'], '+');
+				} else {
+					$this->Session->setFlash(__d('webzash', 'Invalid Dr/Cr option selected.'), 'danger');
+					return;
+				}
+			}
+			if (calculate($dr_total, $cr_total, '!=')) {
+				$this->Session->setFlash(__d('webzash', 'Debit and Credit total do not match.'), 'danger');
+				return;
+			}
+
+			$entrydata['Entry']['dr_total'] = $dr_total;
+			$entrydata['Entry']['cr_total'] = $cr_total;
+
+			/* Add item to entryitemdata array if everything is ok */
+			$entryitemdata = array();
+			foreach ($data['items'] as $row => $entryitem) {
+				if ($entryitem['ledger_id'] <= 0) {
+					continue;
+				}
+				if ($entryitem['dc'] == 'D') {
+					$entryitemdata[] = array(
+						'Entryitem' => array(
+							'dc' => $entryitem['dc'],
+							'ledger_id' => $entryitem['ledger_id'],
+							'amount' => $entryitem['dr_amount'],
+						)
+					);
+				} else {
+					$entryitemdata[] = array(
+						'Entryitem' => array(
+							'dc' => $entryitem['dc'],
+							'ledger_id' => $entryitem['ledger_id'],
+							'amount' => $entryitem['cr_amount'],
+						)
+					);
+				}
+			}
+
+			/* Save entry */
+			$ds = $this->Entry->getDataSource();
+			$ds->begin();
+
+			$this->Entry->create();
+			if ($this->Entry->save($entrydata)) {
+				/* Save entry items */
+				foreach ($entryitemdata as $row => $itemdata) {
+					$itemdata['Entryitem']['entry_id'] = $this->Entry->id;
+					$this->Entryitem->create();
+					if (!$this->Entryitem->save($itemdata)) {
+						foreach ($this->Entryitem->validationErrors as $field => $msg) {
+							$errmsg = $msg[0];
+							break;
+						}
+						$ds->rollback();
+						$this->Session->setFlash(__d('webzash', 'Failed to save entry ledgers. Error is : %s', $errmsg), 'danger');
+						return;
+					}
+				}
+
+				$tempentry = $this->Entry->read(null, $this->Entry->id);
+				if (!$tempentry) {
+					$this->Session->setFlash(__d('webzash', 'Oh snap ! Failed to create entry. Please, try again.'), 'danger');
+					$ds->rollback();
+					return;
+				}
+				$entryNumber = h(toEntryNumber(
+					$tempentry['Entry']['number'],
+					$entrytype['Entrytype']['id']
+				));
+
+				$this->Log->add('Added ' . $entrytype['Entrytype']['name'] . ' entry numbered ' . $entryNumber, 1);
+				$ds->commit();
+
+				$result = array('status' => 'ok');
+				$this->set('result', $result);
+				$this->set('_serialize', 'result');
+			}
+		}
+	}
 /**
  * index method
  *

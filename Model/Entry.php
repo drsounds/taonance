@@ -36,7 +36,6 @@ App::uses('WebzashAppModel', 'Webzash.Model');
 class Entry extends WebzashAppModel {
 	public $belongsTo = array( 'Webzazsh.Ledger');
 
-	public $useDbConfig = array('wz');
 	public $hasMany = array('Webzazsh.Entryitem');
 	/* Validation rules for the Entry table */
 	public $validate = array(
